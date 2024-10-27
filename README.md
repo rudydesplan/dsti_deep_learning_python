@@ -48,6 +48,7 @@ This project leverages the Stanford OVAL CCNews dataset to classify news article
 
 - Python 3.x
 - PyTorch, Transformers, Scikit-learn, Optuna, and additional libraries as specified in `requirements.txt`.
+- Spacy Models: For Spacy, depending on the specific language model (en_core_web_trf, en_core_web_sm, etc.), you will need to install it separately:
 
 ### Setup
 
