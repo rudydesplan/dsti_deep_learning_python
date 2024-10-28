@@ -1,0 +1,355 @@
+ALGORITHM NewsClassification
+
+// 1. DATA PREPROCESSING
+PROCEDURE PreprocessData(dataset)
+    // Clean categories
+    PROCEDURE CleanCategories(categories)
+        FOR EACH category IN categories DO
+            cleanCategory ← RemoveSpecialCharacters(category)
+            cleanCategory ← ConvertToLowerCase(cleanCategory)
+            cleanCategory ← StandardizeFormat(cleanCategory)
+            cleanCategory ← Trim(cleanCategory)
+            
+            IF ContainsDelimiter(cleanCategory) THEN
+                categoryList ← Split(cleanCategory, delimiter)
+                FOR EACH subCategory IN categoryList DO
+                    cleanSubCategory ← Trim(subCategory)
+                    cleanedCategories ← APPEND(cleanSubCategory)
+                END FOR
+            ELSE
+                cleanedCategories ← APPEND(cleanCategory)
+            END IF
+        END FOR
+        RETURN cleanedCategories
+    END PROCEDURE
+
+    PROCEDURE StandardizeCategories(cleanedDataset)
+        categoryFrequencies ← COUNT_CATEGORIES(cleanedDataset.categories)
+        minFrequency ← DEFINE_MINIMUM_FREQUENCY()
+        validCategories ← FILTER_CATEGORIES(categoryFrequencies > minFrequency)
+        
+        categorySynonyms ← DEFINE_CATEGORY_MAPPINGS()
+        FOR EACH category IN cleanedDataset.categories DO
+            IF category IN categorySynonyms THEN
+                category ← categorySynonyms[category]
+            END IF
+        END FOR
+        
+        RETURN cleanedDataset
+    END PROCEDURE
+
+    // Main preprocessing loop
+    FOR EACH article IN dataset DO
+        // Clean text
+        cleanText ← RemoveSpecialCharacters(article.plain_text)
+        cleanText ← RemoveHTMLTags(cleanText)
+        cleanText ← ConvertToLowerCase(cleanText)
+        cleanText ← RemoveExtraSpaces(cleanText)
+        
+        // Clean title
+        cleanTitle ← CleanText(article.title)
+        
+        // Clean categories
+        cleanCategory ← CleanCategories(article.categories)
+        
+        // Combine title and text
+        fullText ← CONCATENATE(cleanTitle, " [SEP] ", cleanText)
+        
+        // Store cleaned data
+        cleanedDataset ← APPEND(fullText, cleanCategory, article.publisher)
+    END FOR
+    
+    // Remove duplicates
+    cleanedDataset ← REMOVE_DUPLICATES(cleanedDataset)
+    
+    // Standardize categories
+    cleanedDataset ← StandardizeCategories(cleanedDataset)
+    
+    // Output statistics
+    PRINT_CATEGORY_DISTRIBUTION(cleanedDataset.categories)
+    
+    RETURN cleanedDataset
+END PROCEDURE
+
+// 2. TEXT COMPOSITION VALIDATION
+PROCEDURE ValidateTextComposition(dataset)
+    // Split a small validation set
+    validationSet ← SPLIT_VALIDATION_SET(dataset, size=0.1)
+    
+    // Compare different composition strategies
+    PROCEDURE CompareStrategies(validationSet)
+        strategiesResults ← EMPTY_DICTIONARY()
+        
+        // Strategy 1: Only text
+        strategy1Result ← TrainSmallModel(validationSet.text)
+        strategiesResults["Only Text"] ← strategy1Result
+        
+        // Strategy 2: Only title
+        strategy2Result ← TrainSmallModel(validationSet.title)
+        strategiesResults["Only Title"] ← strategy2Result
+        
+        // Strategy 3: Title + text
+        strategy3Result ← TrainSmallModel(CONCATENATE(validationSet.title, validationSet.text))
+        strategiesResults["Title + Text"] ← strategy3Result
+        
+        // Strategy 4: Title + [SEP] + text
+        strategy4Result ← TrainSmallModel(CONCATENATE(validationSet.title, " [SEP] ", validationSet.text))
+        strategiesResults["Title + [SEP] + Text"] ← strategy4Result
+
+        // Strategy 5: Publisher + Title + Text
+        strategy5Result ← TrainSmallModel(CONCATENATE(validationSet.publisher, " [SEP] ", validationSet.title, " [SEP] ", validationSet.text))
+        strategiesResults["Publisher + Title + Text"] ← strategy5Result
+        
+        // Strategy 6: Title + Text + Publisher
+        strategy6Result ← TrainSmallModel(CONCATENATE(validationSet.title, " [SEP] ", validationSet.text, " [SEP] ", validationSet.publisher))
+        strategiesResults["Title + Text + Publisher"] ← strategy6Result
+        
+        // Ablation study: Removing title
+        ablation1Result ← TrainSmallModel(validationSet.textWithoutTitle)
+        strategiesResults["Without Title"] ← ablation1Result
+
+        // Ablation study: Removing publisher
+        ablation2Result ← TrainSmallModel(validationSet.textWithoutPublisher)
+        strategiesResults["Without Publisher"] ← ablation2Result
+
+        // Ablation study: Without title and publisher
+        ablation3Result ← TrainSmallModel(validationSet.textWithoutTitleAndPublisher)
+        strategiesResults["Without Title & Publisher"] ← ablation3Result
+        
+        RETURN strategiesResults
+    END PROCEDURE
+
+    // Evaluate strategies and select the best one
+    strategiesResults ← CompareStrategies(validationSet)
+    bestStrategy ← SELECT_BEST_STRATEGY(strategiesResults)
+    
+    RETURN bestStrategy
+END PROCEDURE
+
+// 3. DATA PREPARATION
+PROCEDURE PrepareData(cleanedDataset, bestStrategy)
+    // Apply the best text composition strategy to the full dataset
+    datasetWithBestStrategy ← ApplyBestTextComposition(cleanedDataset, bestStrategy)
+    
+    // Remove duplicates again post-processing
+    datasetWithBestStrategy ← REMOVE_DUPLICATES(datasetWithBestStrategy)
+    
+    // Encode categories
+    PROCEDURE EncodeCategoriesLabels(categories)
+        uniqueCategories ← GET_UNIQUE_VALUES(categories)
+        categoryMapping ← CREATE_MAPPING(uniqueCategories)
+        encodedLabels ← EMPTY_ARRAY()
+        
+        FOR EACH category IN categories DO
+            encodedLabel ← categoryMapping[category]
+            encodedLabels.APPEND(encodedLabel)
+        END FOR
+        
+        RETURN encodedLabels, categoryMapping
+    END PROCEDURE
+    
+    // Split data
+    trainData, validationData, testData ← SPLIT_DATA(
+        datasetWithBestStrategy, 
+        ratios=[0.7, 0.15, 0.15],
+        stratify=datasetWithBestStrategy.categories
+    )
+    
+    // Encode categories
+    encodedLabels, categoryMapping ← EncodeCategoriesLabels(datasetWithBestStrategy.categories)
+    
+    // Create tokenized datasets
+    PROCEDURE CreateTokenizedDataset(texts, labels)
+        tokenizedData ← EMPTY_ARRAY()
+        FOR EACH (text, label) IN (texts, labels) DO
+            tokens ← TOKENIZE_TEXT(text)
+            tokenizedData.APPEND((tokens, label))
+        END FOR
+        RETURN tokenizedData
+    END PROCEDURE
+    
+    trainDataset ← CreateTokenizedDataset(trainData.texts, trainData.encodedLabels)
+    validationDataset ← CreateTokenizedDataset(validationData.texts, validationData.encodedLabels)
+    testDataset ← CreateTokenizedDataset(testData.texts, testData.encodedLabels)
+    
+    RETURN trainDataset, validationDataset, testDataset, categoryMapping
+END PROCEDURE
+
+// 4. MODEL INITIALIZATION
+PROCEDURE InitializeModel()
+    // Load pre-trained RoBERTa
+    model ← LOAD_PRETRAINED_ROBERTA()
+    
+    // Add classification head
+    numberOfCategories ← GET_NUMBER_OF_CATEGORIES()
+    classificationLayer ← CREATE_CLASSIFICATION_LAYER(
+        inputSize: modelOutputSize,
+        outputSize: numberOfCategories
+    )
+    model.ADD(classificationLayer)
+    
+    RETURN model
+END PROCEDURE
+
+// 4.1 HYPERPARAMETER TUNING
+PROCEDURE TuneHyperparameters(trainDataset, validationDataset)
+    hyperparameterSpace ← {
+        "learning_rate": [5e-5, 3e-5, 2e-5],
+        "batch_size": [16, 32],
+        "epochs": [3, 5, 10],
+        "warmup_steps": [0, 500, 1000],
+        "dropout_rate": [0.1, 0.3, 0.5]
+    }
+    
+    bestScore ← -INFINITY
+    bestHyperparameters ← EMPTY_DICTIONARY()
+
+    // Choose a tuning method, e.g., Random Search or Bayesian Optimization
+    FOR EACH combination IN SELECT_HYPERPARAMETER_COMBINATIONS(hyperparameterSpace) DO
+        model ← InitializeModel()
+        APPLY_HYPERPARAMETERS(model, combination)
+        
+        // Train model with the selected hyperparameters on a subset of training data
+        modelScore ← CrossValidateModel(model, trainDataset, validationDataset)
+        
+        IF modelScore > bestScore THEN
+            bestScore ← modelScore
+            bestHyperparameters ← combination
+        END IF
+    END FOR
+    
+    PRINT "Best Hyperparameters:", bestHyperparameters
+    RETURN bestHyperparameters
+END PROCEDURE
+
+// 5. TRAINING
+PROCEDURE TrainModel(model, trainDataset, validationDataset)
+    // Initialize training parameters
+    SET maxEpochs ← 10
+    SET batchSize ← 32
+    SET learningRate ← 0.00002
+    SET patience ← 3  // For early stopping
+    
+    bestValidationLoss ← INFINITY
+    patienceCounter ← 0
+    
+    FOR epoch FROM 1 TO maxEpochs DO
+        // Training phase
+        model.TRAIN_MODE()
+        trainLoss ← 0
+        trainAccuracy ← 0  // Extended logging for training accuracy
+        
+        FOR EACH batch IN CREATE_BATCHES(trainDataset, batchSize) DO
+            // Forward pass
+            predictions ← model.FORWARD(batch.tokens)
+            loss ← CALCULATE_LOSS(predictions, batch.labels)
+            
+            // Backward pass and optimization
+            optimizer.ZERO_GRAD()
+            BACKWARD(loss)
+            OPTIMIZE_STEP(learningRate)
+            
+            trainLoss ← trainLoss + loss
+            trainAccuracy ← trainAccuracy + CALCULATE_ACCURACY(predictions, batch.labels)  // Track batch accuracy
+        END FOR
+        
+        avgTrainLoss ← trainLoss / NUM_BATCHES(trainDataset, batchSize)
+        avgTrainAccuracy ← trainAccuracy / NUM_BATCHES(trainDataset, batchSize)
+        PRINT("Epoch", epoch + 1, "/", maxEpochs, " - Training Loss:", avgTrainLoss, " - Training Accuracy:", avgTrainAccuracy)
+
+        // Validation phase
+        model.EVAL_MODE()
+        valLoss ← 0
+        valAccuracy ← 0  // Extended logging for validation accuracy
+        
+        FOR EACH batch IN CREATE_BATCHES(validationDataset, batchSize) DO
+            predictions ← model.FORWARD(batch.tokens)
+            loss ← CALCULATE_LOSS(predictions, batch.labels)
+            valLoss ← valLoss + loss
+            valAccuracy ← valAccuracy + CALCULATE_ACCURACY(predictions, batch.labels)  // Track batch accuracy
+        END FOR
+        
+        avgValLoss ← valLoss / NUM_BATCHES(validationDataset, batchSize)
+        avgValAccuracy ← valAccuracy / NUM_BATCHES(validationDataset, batchSize)
+        PRINT("Epoch", epoch + 1, "/", maxEpochs, " - Validation Loss:", avgValLoss, " - Validation Accuracy:", avgValAccuracy)
+
+        // Checkpointing and Early Stopping
+        IF avgValLoss < bestValidationLoss THEN
+            bestValidationLoss ← avgValLoss
+            patienceCounter ← 0
+            SAVE_CHECKPOINT(model)  // Save the best model checkpoint
+            PRINT("Validation loss improved. Saving model checkpoint.")
+        ELSE
+            patienceCounter ← patienceCounter + 1
+            PRINT("No improvement in validation loss. Patience counter:", patienceCounter)
+
+        // Stop training if patience limit is reached
+        IF patienceCounter ≥ patience THEN
+            PRINT("Early stopping triggered.")
+            BREAK
+        END IF
+        
+        // Update learning rate if needed
+        learningRate ← UPDATE_LEARNING_RATE(avgValLoss)
+    END FOR
+END PROCEDURE
+
+
+// 6. EVALUATION
+PROCEDURE EvaluateModel(model, testDataset)
+    model.EVAL_MODE()
+    predictions ← EMPTY_ARRAY()
+    
+    FOR EACH batch IN CREATE_BATCHES(testDataset) DO
+        batchPredictions ← model.PREDICT(batch.tokens)
+        predictions.APPEND(batchPredictions)
+    END FOR
+    
+    // Calculate metrics
+    confusionMatrix ← CREATE_CONFUSION_MATRIX(predictions, testDataset.labels)
+    accuracy ← CALCULATE_ACCURACY(predictions, testDataset.labels)
+    precisionRecallF1 ← CALCULATE_PRF(predictions, testDataset.labels)
+    
+    // Per-category metrics
+    FOR EACH category IN uniqueCategories DO
+        categoryMetrics ← CALCULATE_CATEGORY_METRICS(
+            predictions, 
+            testDataset.labels, 
+            category
+        )
+        PRINT_CATEGORY_PERFORMANCE(category, categoryMetrics)
+    END FOR
+    
+    // Perform k-fold cross-validation
+    kFoldMetrics ← PERFORM_KFOLD_CROSS_VALIDATION(model, dataset, k=5)
+    
+    RETURN confusionMatrix, accuracy, precisionRecallF1, kFoldMetrics
+END PROCEDURE
+
+// MAIN EXECUTION FLOW
+PROCEDURE Main()
+    // 1. Load and preprocess
+    rawData ← LOAD_DATASET()
+    cleanedData ← PreprocessData(rawData)
+    
+    // 2. Validate text composition
+    bestStrategy ← ValidateTextComposition(cleanedData)
+    
+    // 3. Prepare data
+    trainDataset, validationDataset, testDataset, categoryMapping ← 
+        PrepareData(cleanedData, bestStrategy)
+    
+    // 4. Initialize model
+    model ← InitializeModel()
+    
+    // 5. Train
+    TrainModel(model, trainDataset, validationDataset)
+    
+    // 6. Evaluate
+    metrics ← EvaluateModel(model, testDataset)
+    
+    // 7. Save results
+    SAVE_MODEL(model)
+    SAVE_METRICS(metrics)
+    SAVE_CATEGORY_MAPPING(categoryMapping)
+END PROCEDURE
