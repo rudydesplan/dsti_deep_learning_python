@@ -54,8 +54,8 @@ This project leverages the Stanford OVAL CCNews dataset to classify news article
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your_username/news-classification.git
-   cd news-classification
+   git clone https://github.com/rudydesplan/dsti_deep_learning_python.git
+   cd dsti_deep_learning_python
    ```
 
 2. Install the dependencies:
